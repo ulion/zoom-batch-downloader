@@ -1,5 +1,8 @@
 import requests 
+import shutil
 import datetime
+import os
+from time import sleep
 
 # Put your JWT token that you get from https://marketplace.zoom.us/ here. 
 JWT = '##########'
@@ -64,23 +67,41 @@ def get_recording(start_date, next_date):
 			if record['status'] != 'completed':
 				continue
 
+			print(record)
+			filetype = record['file_type'].lower()
+			filetype = 'txt' if filetype == 'chat' else filetype
 			download_recording(
 				record['download_url'], 
-				record['recording_start'].replace(':','-')
+				'{}.{}'.format(record['recording_start'].replace(':','-'), filetype),
+				record['file_size']
 			)
 
 
-def download_recording(download_url, filename):
+def download_recording(download_url, filename, filesize):
 	print(download_url)
 	download_access_url = '{}?access_token={}'.format(download_url, JWT)
 	print(download_access_url)
-	response = requests.get(download_access_url, stream=True)
-	local_filename = '{}{}.mp4'.format(PATH, filename)
+	local_filename = '{}/{}/{}'.format(PATH, filename[:7], filename)
+	try:
+		if os.path.getsize(local_filename) == filesize:
+			print('SKIP EXISTED: {}'.format(filename))
+			return
+	except:
+		pass
 
-	with open(local_filename, 'wb') as f:
-		for chunk in response.iter_content(chunk_size=8192):
-			print (len(chunk))
-			f.write(chunk)
+	total, used, free = shutil.disk_usage("/")
+	print(free)
+	while free < filesize + 2**30:
+		print('Waiting disk space ...')
+		sleep(30)
+		total, used, free = shutil.disk_usage("/")
+		print(free)
+
+	with requests.get(download_access_url, stream=True) as r:
+		os.makedirs(os.path.dirname(local_filename), exist_ok=True)
+		with open(local_filename + '.tmp', 'wb') as f:
+			shutil.copyfileobj(r.raw, f)
+		os.rename(local_filename + '.tmp', local_filename)
 
 	   
 if __name__ == '__main__':
